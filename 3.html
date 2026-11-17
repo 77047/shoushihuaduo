@@ -1,0 +1,1531 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>BLOOM 指尖绽放</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<style>
+  :root{
+    --rose:#ff4d8d;
+    --violet:#a855f7;
+    --orange:#ff8a3d;
+    --text:#ecdfef;
+    --dim:rgba(208,188,222,.48);
+    --line:rgba(255,255,255,.075);
+    --panel:rgba(11,7,17,.62);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{width:100%;height:100%;overflow:hidden;background:#02010a;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Helvetica Neue",Arial,sans-serif;
+    color:var(--text);
+    -webkit-font-smoothing:antialiased;
+    user-select:none;
+  }
+  #scene{position:fixed;inset:0;display:block;}
+
+  .hud{position:fixed;inset:0;z-index:10;pointer-events:none;}
+  .hud .ia{pointer-events:auto;}
+
+  .title-block{position:absolute;top:38px;left:46px;}
+  .eyebrow{
+    font-size:9px;letter-spacing:.42em;color:rgba(255,77,141,.62);
+    margin-bottom:13px;text-transform:uppercase;
+  }
+  .title-block h1{
+    font-size:clamp(17px,1.45vw,22px);
+    font-weight:400;letter-spacing:.26em;
+    color:#f5ebf9;
+    text-shadow:0 0 26px rgba(255,77,141,.42), 0 0 60px rgba(168,85,247,.28);
+    white-space:nowrap;
+  }
+  .title-block p{
+    margin-top:12px;font-size:11.5px;letter-spacing:.11em;
+    color:var(--dim);line-height:1.9;
+  }
+
+  .cam-block{position:absolute;left:46px;bottom:116px;width:224px;}
+  .cam-frame{
+    position:relative;width:224px;height:168px;
+    border:1px solid rgba(255,138,61,.26);
+    border-radius:3px;overflow:hidden;
+    background:#08060c;
+    box-shadow:0 0 30px rgba(255,138,61,.07), inset 0 0 30px rgba(0,0,0,.7);
+  }
+  .cam-frame video{
+    position:absolute;inset:0;width:100%;height:100%;
+    object-fit:cover;transform:scaleX(-1);opacity:.72;
+  }
+  .cam-frame canvas{position:absolute;inset:0;width:100%;height:100%;}
+  .cam-placeholder{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:10px;letter-spacing:.2em;color:rgba(255,138,61,.42);
+  }
+  .cam-label{
+    margin-top:9px;font-size:9px;letter-spacing:.24em;
+    color:rgba(255,138,61,.5);
+    display:flex;align-items:center;gap:7px;
+  }
+  .cam-label i{
+    width:5px;height:5px;border-radius:50%;background:var(--orange);
+    box-shadow:0 0 8px var(--orange);display:inline-block;
+    animation:pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+
+  .panel{
+    position:absolute;right:46px;top:50%;transform:translateY(-50%);
+    width:300px;padding:20px 22px 18px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:5px;
+    backdrop-filter:blur(14px);
+    -webkit-backdrop-filter:blur(14px);
+    box-shadow:0 20px 60px rgba(0,0,0,.55);
+  }
+  .panel-head{
+    display:flex;align-items:center;gap:9px;
+    padding-bottom:13px;border-bottom:1px solid var(--line);
+    font-size:12px;letter-spacing:.24em;color:#e6d8ee;
+  }
+  .panel-head .dot{
+    width:5px;height:5px;border-radius:50%;background:var(--rose);
+    box-shadow:0 0 10px var(--rose);
+  }
+  .panel-head-en{
+    margin-left:auto;font-size:8.5px;letter-spacing:.22em;color:rgba(255,255,255,.22);
+  }
+
+  .ring-wrap{position:relative;width:134px;height:134px;margin:16px auto 10px;}
+  .ring-wrap svg{width:100%;height:100%;transform:rotate(-90deg);}
+  .ring-track{fill:none;stroke:rgba(255,255,255,.06);stroke-width:2.5;}
+  .ring-fill{
+    fill:none;stroke:url(#gradRing);stroke-width:2.5;stroke-linecap:round;
+    filter:drop-shadow(0 0 6px rgba(255,77,141,.65));
+  }
+  .ring-center{
+    position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;
+  }
+  .ring-value{
+    font-size:29px;font-weight:200;letter-spacing:.01em;
+    font-variant-numeric:tabular-nums;color:#fff;
+    text-shadow:0 0 22px rgba(255,77,141,.55);
+    line-height:1;
+  }
+  .ring-unit{
+    font-size:7.5px;letter-spacing:.26em;color:rgba(255,255,255,.3);margin-top:6px;
+  }
+
+  .sec-label{
+    display:flex;align-items:baseline;gap:8px;
+    font-size:10px;letter-spacing:.16em;color:rgba(230,216,238,.7);
+    margin:12px 0 6px;
+  }
+  .sec-label span{font-size:8px;letter-spacing:.2em;color:rgba(255,255,255,.2);}
+  #wave{width:100%;height:48px;display:block;}
+
+  .stat-list{margin-top:12px;border-top:1px solid var(--line);padding-top:10px;}
+  .stat-row{
+    display:flex;align-items:center;justify-content:space-between;
+    font-size:10px;letter-spacing:.1em;padding:4.5px 0;
+    color:rgba(208,188,222,.5);
+  }
+  .stat-row b{
+    font-weight:400;color:rgba(240,230,248,.92);
+    font-variant-numeric:tabular-nums;letter-spacing:.06em;
+  }
+  .stat-row b.ok{color:#63e0a8;}
+  .stat-row b.warn{color:rgba(255,138,61,.9);}
+  .stat-row b.gold{color:#ffc46b;}
+
+  .btn-row{display:flex;flex-direction:column;gap:7px;margin-top:14px;}
+  .btn{
+    font-family:inherit;font-size:11px;letter-spacing:.16em;
+    padding:9px 14px;border-radius:3px;cursor:pointer;
+    color:rgba(228,214,238,.78);
+    background:rgba(255,255,255,.025);
+    border:1px solid rgba(255,255,255,.1);
+    transition:all .28s ease;
+  }
+  .btn:hover{
+    color:#fff;border-color:rgba(255,77,141,.5);
+    background:rgba(255,77,141,.1);
+    box-shadow:0 0 22px rgba(255,77,141,.16);
+  }
+  .btn:active{transform:scale(.985);}
+
+  .bottom-bar{
+    position:absolute;left:0;right:0;bottom:0;
+    padding:20px 46px 24px;
+    display:flex;flex-direction:column;align-items:center;gap:13px;
+    background:linear-gradient(to top, rgba(2,1,10,.9), rgba(2,1,10,0));
+  }
+  .btn-line{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
+  .hint{
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:center;
+    font-size:10px;letter-spacing:.14em;color:rgba(208,188,222,.34);
+  }
+  .hint .sep{color:rgba(255,255,255,.13);}
+
+  @media (max-width:1100px){
+    .panel{width:270px;right:24px;padding:16px;}
+    .title-block{left:26px;top:26px;}
+    .cam-block{left:26px;bottom:106px;width:186px;}
+    .cam-frame{width:186px;height:140px;}
+    .bottom-bar{padding:16px 26px 20px;}
+  }
+  @media (max-width:860px){
+    .panel{transform:translateY(-50%) scale(.82);transform-origin:right center;right:10px;}
+    .cam-block{display:none;}
+    .title-block p{display:none;}
+  }
+  @media (max-width:640px){
+    .panel{display:none;}
+    .title-block{left:18px;top:18px;}
+  }
+</style>
+</head>
+<body>
+
+<canvas id="scene"></canvas>
+
+<div class="hud">
+
+  <div class="title-block">
+    <div class="eyebrow">Bloom · 指尖绽放</div>
+    <h1>指尖有花 应手而开</h1>
+    <p>攥拳，花瓣向内收拢。张掌，九万颗粒子缓缓舒展。</p>
+  </div>
+
+  <div class="cam-block">
+    <div class="cam-frame">
+      <video id="cam" playsinline muted autoplay></video>
+      <canvas id="camOverlay" width="320" height="240"></canvas>
+      <div class="cam-placeholder" id="camPlaceholder">摄像头未启动</div>
+    </div>
+    <div class="cam-label"><i></i>LIVE · 手部骨骼追踪</div>
+  </div>
+
+  <aside class="panel ia">
+    <div class="panel-head">
+      <span class="dot"></span>
+      <span>观察记录</span>
+      <span class="panel-head-en">OBSERVATION</span>
+    </div>
+
+    <div class="ring-wrap">
+      <svg viewBox="0 0 140 140">
+        <defs>
+          <linearGradient id="gradRing" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stop-color="#ff4d8d"/>
+            <stop offset="55%"  stop-color="#a855f7"/>
+            <stop offset="100%" stop-color="#ffc46b"/>
+          </linearGradient>
+        </defs>
+        <circle cx="70" cy="70" r="52" class="ring-track"/>
+        <circle cx="70" cy="70" r="52" class="ring-fill" id="ringFill"
+                stroke-dasharray="326.73" stroke-dashoffset="326.73"/>
+      </svg>
+      <div class="ring-center">
+        <div class="ring-value" id="ringValue">70</div>
+        <div class="ring-unit">% BLOOM</div>
+      </div>
+    </div>
+
+    <div class="sec-label">粒子数量波形 <span>PARTICLE FLUX</span></div>
+    <canvas id="wave" width="480" height="96"></canvas>
+
+    <div class="stat-list">
+      <div class="stat-row"><span>追踪状态</span><b id="sTrack" class="warn">待机</b></div>
+      <div class="stat-row"><span>当前手势</span><b id="sGesture" class="gold">—</b></div>
+      <div class="stat-row"><span>手掌开合</span><b id="sOpen">0%</b></div>
+      <div class="stat-row"><span>绽放进度</span><b id="sBloom">70.0%</b></div>
+      <div class="stat-row"><span>粒子总数</span><b>90,000</b></div>
+      <div class="stat-row"><span>渲染帧率</span><b id="sFps">—</b></div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn" id="btnClose">握拳 · 收拢花朵</button>
+      <button class="btn" id="btnOpen">张开手掌 · 向外绽放</button>
+    </div>
+  </aside>
+
+  <div class="bottom-bar ia">
+    <div class="btn-line">
+      <button class="btn" id="btnCam">启动摄像头</button>
+      <button class="btn" id="btnAuto">自动演示</button>
+    </div>
+    <div class="hint">
+      <span>张掌绽放</span>
+      <span class="sep">/</span>
+      <span>握拳收拢</span>
+      <span class="sep">/</span>
+      <span>捏合冲击波</span>
+      <span class="sep">/</span>
+      <span>剪刀手变调</span>
+      <span class="sep">/</span>
+      <span>转动手腕 · 花朵旋转</span>
+    </div>
+  </div>
+
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ------------------------------------------------------------------
+   0. 基础
+------------------------------------------------------------------ */
+THREE.ColorManagement.enabled = false;
+
+const canvasEl = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({
+  canvas: canvasEl,
+  antialias: false,
+  alpha: false,
+  powerPreference: 'high-performance',
+  stencil: false
+});
+
+const MAX_PR = Math.min(window.devicePixelRatio || 1, 1.5);
+let curPR = MAX_PR;
+renderer.setPixelRatio(curPR);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x02010a, 1);
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 400);
+camera.position.set(0, 0, 14);
+
+function fitCamera() {
+  const aspect = window.innerWidth / window.innerHeight;
+  camera.aspect = aspect;
+  const vFov = THREE.MathUtils.degToRad(camera.fov);
+  // 缩小 need 数值 → 相机更近 → 花更大更醒目
+  const need = 6.6;
+  const distV = need / Math.tan(vFov / 2);
+  const hFov  = 2 * Math.atan(Math.tan(vFov / 2) * aspect);
+  const distH = need / Math.tan(hFov / 2);
+  camera.position.z = Math.max(distV, distH);
+  camera.updateProjectionMatrix();
+}
+fitCamera();
+
+/* ------------------------------------------------------------------
+   1. 柔光贴图
+------------------------------------------------------------------ */
+function makeGlowTexture(size = 128) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0.00, 'rgba(255,255,255,1)');
+  g.addColorStop(0.15, 'rgba(255,255,255,0.80)');
+  g.addColorStop(0.35, 'rgba(255,255,255,0.28)');
+  g.addColorStop(0.62, 'rgba(255,255,255,0.07)');
+  g.addColorStop(1.00, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(c);
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  return tex;
+}
+const glowTex = makeGlowTexture();
+
+/* ------------------------------------------------------------------
+   2. 配色
+------------------------------------------------------------------ */
+const W = {
+  deep: new THREE.Color(0x3a0524),
+  wine: new THREE.Color(0x8a0f4e),
+  mid:  new THREE.Color(0xc41a72),
+  rose: new THREE.Color(0xff3e8e),
+  pink: new THREE.Color(0xff90c2),
+  gold: new THREE.Color(0xffcf7a),
+  hot:  new THREE.Color(0xfff6e2)
+};
+const K = {
+  deep: new THREE.Color(0x0a0620),
+  wine: new THREE.Color(0x141060),
+  mid:  new THREE.Color(0x2536b0),
+  rose: new THREE.Color(0x3a8ee0),
+  pink: new THREE.Color(0x8ee0ff),
+  gold: new THREE.Color(0xa8f0e8),
+  hot:  new THREE.Color(0xe0fff8)
+};
+
+/* ------------------------------------------------------------------
+   3. 花朵粒子几何
+------------------------------------------------------------------ */
+const isMobile = window.innerWidth < 820;
+const COUNT = isMobile ? 50000 : 90000;
+
+const LAYERS = [
+  { petals: 8, ratio: 0.26, len: 4.15, width: 0.95, rot: 0.00, curl: 0.55, zOff: 0.00, twist: 0.07,
+    wc: [W.deep, W.wine, W.rose], kc: [K.deep, K.wine, K.rose], edgeW: 0.65, delay: 0.22 },
+  { petals: 8, ratio: 0.23, len: 3.25, width: 0.82, rot: 0.39, curl: 0.72, zOff: 0.18, twist: 0.12,
+    wc: [W.wine, W.mid,  W.pink], kc: [K.wine, K.mid,  K.pink], edgeW: 0.55, delay: 0.15 },
+  { petals: 6, ratio: 0.18, len: 2.35, width: 0.72, rot: 0.13, curl: 0.84, zOff: 0.40, twist: 0.18,
+    wc: [W.mid,  W.rose, W.gold], kc: [K.mid,  K.rose, K.gold], edgeW: 0.48, delay: 0.08 },
+  { petals: 6, ratio: 0.13, len: 1.55, width: 0.60, rot: 0.55, curl: 0.95, zOff: 0.60, twist: 0.22,
+    wc: [W.rose, W.pink, W.hot],  kc: [K.rose, K.pink, K.hot],  edgeW: 0.42, delay: 0.04 },
+  { petals: 0, ratio: 0.20, len: 0.68, width: 0.68, rot: 0.00, curl: 0.00, zOff: 0.80, twist: 0.00,
+    wc: [W.gold, W.gold, W.hot],  kc: [K.gold, K.gold, K.hot],  edgeW: 0.60, delay: 0.00 }
+];
+
+const positions = new Float32Array(COUNT * 3);
+const closedPos = new Float32Array(COUNT * 3);
+const colorsA   = new Float32Array(COUNT * 3);
+const colorsB   = new Float32Array(COUNT * 3);
+const sizes     = new Float32Array(COUNT);
+const seeds     = new Float32Array(COUNT);
+const delays    = new Float32Array(COUNT);
+
+const _cw = new THREE.Color();
+const _ck = new THREE.Color();
+
+function petalWidth(u) {
+  const s = Math.sin(Math.PI * Math.pow(u, 0.85));
+  return Math.pow(Math.max(s, 0), 0.60);
+}
+
+let cursor = 0;
+LAYERS.forEach((L) => {
+  const end = cursor + Math.floor(COUNT * L.ratio);
+  const isCore = L.petals === 0;
+
+  for (let i = cursor; i < end; i++) {
+    const i3 = i * 3;
+    let x, y, z, u, v, edgeDist, tipDist;
+
+    if (isCore) {
+      const isStamen = Math.random() < 0.16;
+      if (isStamen) {
+        const th = Math.random() * Math.PI * 2;
+        const r = 0.22 + Math.random() * (L.len - 0.18);
+        x = Math.cos(th) * r;
+        y = Math.sin(th) * r;
+        z = L.zOff + Math.pow(r / L.len, 1.6) * 0.48 + (Math.random() - 0.5) * 0.16;
+        u = r / L.len; v = 0;
+      } else {
+        const th = Math.random() * Math.PI * 2;
+        const r = Math.pow(Math.random(), 0.5) * L.len;
+        const rr = r / L.len;
+        x = Math.cos(th) * r;
+        y = Math.sin(th) * r;
+        z = L.zOff + (1 - rr) * (1 - rr) * 0.30 + (Math.random() - 0.5) * 0.05;
+        u = rr; v = 0;
+      }
+      edgeDist = u; tipDist = u;
+
+      _cw.copy(L.wc[0]).lerp(L.wc[1], Math.pow(1 - u, 0.9));
+      _cw.lerp(L.wc[2], Math.pow(1 - u, 2.4) * 0.85);
+      if (Math.random() < 0.14) _cw.lerp(W.rose, 0.28);
+      _cw.multiplyScalar(0.85 + Math.random() * 0.55);
+
+      _ck.copy(L.kc[0]).lerp(L.kc[1], Math.pow(1 - u, 0.9));
+      _ck.lerp(L.kc[2], Math.pow(1 - u, 2.4) * 0.85);
+      if (Math.random() < 0.14) _ck.lerp(K.rose, 0.28);
+      _ck.multiplyScalar(0.85 + Math.random() * 0.55);
+
+    } else {
+      const k = Math.floor(Math.random() * L.petals);
+      const theta = L.rot + k * Math.PI * 2 / L.petals;
+
+      u = Math.random();
+      const halfW = petalWidth(u);
+      v = (Math.random() < 0.5 ? -1 : 1) * Math.pow(Math.random(), 0.62) * halfW;
+
+      const dirX  = Math.cos(theta), dirY  = Math.sin(theta);
+      const perpX = -Math.sin(theta), perpY = Math.cos(theta);
+
+      const radial = u * L.len;
+      const lat    = v * L.width;
+
+      x = dirX * radial + perpX * lat;
+      y = dirY * radial + perpY * lat;
+
+      const scoop  = Math.pow(Math.abs(v), 1.8) * 0.26 * u;
+      const tipUp  = Math.pow(u, 4.0) * 0.26;
+      z = L.zOff + L.curl * u * u + scoop + tipUp + (Math.random() - 0.5) * 0.04;
+
+      if (L.twist > 0) {
+        const tw = L.twist * u * u * u;
+        const ct = Math.cos(tw), st = Math.sin(tw);
+        const nx = x * ct - y * st;
+        const ny = x * st + y * ct;
+        x = nx; y = ny;
+      }
+
+      edgeDist = Math.abs(v);
+      tipDist = u;
+
+      const edgeHi = Math.pow(edgeDist, 2.6) * L.edgeW;
+      const tipHi  = Math.pow(tipDist, 3.2) * 0.55;
+
+      _cw.copy(L.wc[0]).lerp(L.wc[1], Math.pow(u, 0.75));
+      _cw.lerp(L.wc[2], Math.min(1, edgeHi + tipHi));
+      if (Math.random() < 0.06) _cw.lerp(W.gold, 0.5 + Math.random() * 0.4);
+      _cw.multiplyScalar(0.78 + Math.random() * 0.60);
+
+      _ck.copy(L.kc[0]).lerp(L.kc[1], Math.pow(u, 0.75));
+      _ck.lerp(L.kc[2], Math.min(1, edgeHi + tipHi));
+      if (Math.random() < 0.06) _ck.lerp(K.gold, 0.5 + Math.random() * 0.4);
+      _ck.multiplyScalar(0.78 + Math.random() * 0.60);
+    }
+
+    x += (Math.random() - 0.5) * 0.04;
+    y += (Math.random() - 0.5) * 0.04;
+
+    positions[i3]     = x;
+    positions[i3 + 1] = y;
+    positions[i3 + 2] = z;
+
+    colorsA[i3]     = _cw.r; colorsA[i3 + 1] = _cw.g; colorsA[i3 + 2] = _cw.b;
+    colorsB[i3]     = _ck.r; colorsB[i3 + 1] = _ck.g; colorsB[i3 + 2] = _ck.b;
+
+    /* 收拢态：精致水滴花苞 */
+    const budH = 1.55;
+    const budR = 0.44;
+    const uu = Math.random();
+    const profile = Math.pow(Math.sin(Math.PI * Math.pow(uu, 0.55)), 0.85);
+    const theta2 = Math.random() * Math.PI * 2;
+    const shell = 0.72 + 0.28 * Math.random();
+    const rr = profile * budR * shell;
+    closedPos[i3]     = Math.cos(theta2) * rr;
+    closedPos[i3 + 1] = (uu - 0.5) * budH;
+    closedPos[i3 + 2] = Math.sin(theta2) * rr * 0.78;
+
+    const coreBonus = isCore ? 0.32 : 0;
+    const edgeBonus = isCore ? 0 : Math.pow(edgeDist, 2) * 0.28 + Math.pow(tipDist, 2) * 0.20;
+    sizes[i] = 0.42 + Math.random() * 0.70 + coreBonus + edgeBonus;
+
+    seeds[i]  = Math.random();
+    delays[i] = Math.min(0.46, L.delay + Math.random() * 0.20);
+  }
+  cursor = end;
+});
+
+const geo = new THREE.BufferGeometry();
+geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+geo.setAttribute('aClosed',  new THREE.BufferAttribute(closedPos, 3));
+geo.setAttribute('aColor',   new THREE.BufferAttribute(colorsA, 3));
+geo.setAttribute('aColor2',  new THREE.BufferAttribute(colorsB, 3));
+geo.setAttribute('aSize',    new THREE.BufferAttribute(sizes, 1));
+geo.setAttribute('aSeed',    new THREE.BufferAttribute(seeds, 1));
+geo.setAttribute('aDelay',   new THREE.BufferAttribute(delays, 1));
+geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 14);
+
+/* ------------------------------------------------------------------
+   4. 粒子材质（增强亮度与尺寸）
+------------------------------------------------------------------ */
+const material = new THREE.ShaderMaterial({
+  uniforms: {
+    uTime:       { value: 0 },
+    uBloom:      { value: 0.70 },
+    uFlare:      { value: 0 },
+    uBurst:      { value: 0 },
+    uColorMix:   { value: 0 },
+    uRotCos:     { value: 1 },
+    uRotSin:     { value: 0 },
+    uPixelRatio: { value: curPR },
+    uMap:        { value: glowTex }
+  },
+  vertexShader: /* glsl */`
+    uniform float uTime;
+    uniform float uBloom;
+    uniform float uFlare;
+    uniform float uBurst;
+    uniform float uColorMix;
+    uniform float uRotCos;
+    uniform float uRotSin;
+    uniform float uPixelRatio;
+
+    attribute vec3  aClosed;
+    attribute vec3  aColor;
+    attribute vec3  aColor2;
+    attribute float aSize;
+    attribute float aSeed;
+    attribute float aDelay;
+
+    varying vec3  vColor;
+    varying float vAlpha;
+
+    void main() {
+      float d = aDelay;
+      float t = (uBloom - d) / max(1.0 - d, 0.0001);
+      t = clamp(t, 0.0, 1.0);
+      t = t * t * (3.0 - 2.0 * t);
+
+      vec3 p = mix(aClosed, position, t);
+
+      float w = uTime * 0.9 + aSeed * 6.28318;
+      float sw = sin(w);
+      float cw = cos(w);
+      float amp = 0.010 + 0.045 * t;
+      p.x += sw * amp;
+      p.y += cw * amp;
+      p.z += sin(w * 1.5) * amp * 1.5;
+
+      float bAmt = uBurst * (0.3 + 0.7 * t);
+      p.xy *= 1.0 + bAmt * 0.55 * (0.5 + aSeed * 0.5);
+      p.z  += bAmt * 1.8 * (aSeed - 0.5);
+
+      p.xy = mat2(uRotCos, -uRotSin, uRotSin, uRotCos) * p.xy;
+
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      gl_Position = projectionMatrix * mv;
+
+      float tw = 0.5 + 0.5 * sin(uTime * 2.6 + aSeed * 12.566);
+
+      vec3 baseColor = mix(aColor, aColor2, uColorMix);
+
+      vColor = baseColor * (0.85 + 0.50 * tw)
+             * (1.0 + uFlare * 0.9 + uBurst * 0.7)
+             * (0.65 + 0.45 * t);
+      vAlpha = (0.50 + 0.50 * tw) * (0.55 + 0.45 * t);
+
+      float sizeMul = (0.34 + 0.66 * t) * (1.0 + uBurst * 0.35);
+      gl_PointSize = aSize * uPixelRatio * sizeMul
+                   * (72.0 / max(-mv.z, 0.001))
+                   * (0.76 + 0.46 * tw);
+      gl_PointSize = clamp(gl_PointSize, 1.0, 30.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    uniform sampler2D uMap;
+    varying vec3  vColor;
+    varying float vAlpha;
+
+    void main() {
+      vec4 tex = texture2D(uMap, gl_PointCoord);
+      float a = tex.a * vAlpha;
+      if (a < 0.004) discard;
+      gl_FragColor = vec4(vColor, a);
+    }
+  `,
+  transparent: true,
+  depthWrite: false,
+  depthTest: true,
+  blending: THREE.AdditiveBlending
+});
+
+const bloomPoints = new THREE.Points(geo, material);
+bloomPoints.frustumCulled = false;
+
+/* ------------------------------------------------------------------
+   5. 精细圆环纹理
+------------------------------------------------------------------ */
+const RING_WORLD_RADIUS = 5.85;
+const RING_UV_RADIUS    = 0.385;
+const RING_SPRITE_SCALE = RING_WORLD_RADIUS / RING_UV_RADIUS;
+
+function makeHaloRingTexture(size = 1024) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const cx = size / 2, cy = size / 2;
+  const R = size * RING_UV_RADIUS;
+
+  /* 外侧柔光 */
+  {
+    const g = ctx.createRadialGradient(cx, cy, R * 0.90, cx, cy, R * 1.42);
+    g.addColorStop(0.00, 'rgba(255,90,170,0.00)');
+    g.addColorStop(0.12, 'rgba(255,80,150,0.055)');
+    g.addColorStop(0.42, 'rgba(220,100,225,0.032)');
+    g.addColorStop(0.74, 'rgba(140,80,230,0.010)');
+    g.addColorStop(1.00, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+  }
+
+  /* 内侧柔光 */
+  {
+    const g = ctx.createRadialGradient(cx, cy, R * 0.58, cx, cy, R * 0.99);
+    g.addColorStop(0.00, 'rgba(0,0,0,0)');
+    g.addColorStop(0.62, 'rgba(160,90,225,0.006)');
+    g.addColorStop(0.88, 'rgba(205,105,205,0.036)');
+    g.addColorStop(1.00, 'rgba(255,100,180,0.00)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+  }
+
+  /* 分段主环 */
+  const SEG = 900;
+
+  // 宽柔光层
+  ctx.lineWidth = 8;
+  ctx.lineCap = 'butt';
+  for (let i = 0; i < SEG; i += 4) {
+    const a0 = (i / SEG) * Math.PI * 2;
+    const a1 = ((i + 4) / SEG) * Math.PI * 2 + 0.008;
+    const ang = i / SEG;
+    const bright = 0.30
+      + 0.60 * Math.pow(Math.max(0, Math.cos((ang - 0.10) * Math.PI * 2)), 3)
+      + 0.42 * Math.pow(Math.max(0, Math.cos((ang - 0.42) * Math.PI * 2)), 5)
+      + 0.30 * Math.pow(Math.max(0, Math.cos((ang - 0.73) * Math.PI * 2)), 4);
+    ctx.strokeStyle = `rgba(255,110,190,${bright * 0.075})`;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, a0, a1);
+    ctx.stroke();
+  }
+
+  // 细主线
+  ctx.lineWidth = 2.4;
+  for (let i = 0; i < SEG; i++) {
+    const a0 = (i / SEG) * Math.PI * 2;
+    const a1 = ((i + 1) / SEG) * Math.PI * 2 + 0.005;
+    const ang = i / SEG;
+    const bright = 0.30
+      + 0.60 * Math.pow(Math.max(0, Math.cos((ang - 0.10) * Math.PI * 2)), 3)
+      + 0.42 * Math.pow(Math.max(0, Math.cos((ang - 0.42) * Math.PI * 2)), 5)
+      + 0.30 * Math.pow(Math.max(0, Math.cos((ang - 0.73) * Math.PI * 2)), 4);
+
+    const hue = 328 + 24 * Math.sin(ang * Math.PI * 4);
+    const sat = 88;
+    const light = 56 + 22 * bright;
+
+    ctx.strokeStyle = `hsla(${hue}, ${sat}%, ${light}%, ${Math.min(1, bright * 0.95)})`;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, a0, a1);
+    ctx.stroke();
+  }
+
+  /* 环上细小亮点 */
+  for (let i = 0; i < 56; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = 0.6 + Math.random() * 1.8;
+    const x = cx + Math.cos(a) * R;
+    const y = cy + Math.sin(a) * R;
+    const gr = ctx.createRadialGradient(x, y, 0, x, y, r * 3.2);
+    gr.addColorStop(0, 'rgba(255,225,245,0.72)');
+    gr.addColorStop(0.5, 'rgba(255,165,225,0.20)');
+    gr.addColorStop(1, 'rgba(255,150,220,0)');
+    ctx.fillStyle = gr;
+    ctx.beginPath();
+    ctx.arc(x, y, r * 3.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  /* 内外细辅助环 */
+  ctx.lineWidth = 1.0;
+  ctx.strokeStyle = 'rgba(200,140,255,0.085)';
+  ctx.beginPath();
+  ctx.arc(cx, cy, R * 0.72, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(180,120,255,0.045)';
+  ctx.beginPath();
+  ctx.arc(cx, cy, R * 1.16, 0, Math.PI * 2);
+  ctx.stroke();
+
+  /* 刻度 */
+  for (let i = 0; i < 96; i++) {
+    const a = (i / 96) * Math.PI * 2;
+    const isMajor = i % 6 === 0;
+    const r0 = R * 0.968;
+    const r1 = R * (isMajor ? 1.048 : 1.022);
+    ctx.strokeStyle = isMajor ? 'rgba(235,155,255,0.26)' : 'rgba(205,125,255,0.11)';
+    ctx.lineWidth = isMajor ? 1.4 : 0.9;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+    ctx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+    ctx.stroke();
+  }
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return tex;
+}
+
+const ringTex = makeHaloRingTexture();
+
+const ringMat = new THREE.SpriteMaterial({
+  map: ringTex,
+  color: 0xffffff,
+  transparent: true,
+  opacity: 0.62,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  depthTest: false
+});
+const ringSprite = new THREE.Sprite(ringMat);
+ringSprite.scale.set(RING_SPRITE_SCALE, RING_SPRITE_SCALE, 1);
+ringSprite.position.set(0, 0, -2);
+ringSprite.renderOrder = -25;
+
+/* ------------------------------------------------------------------
+   6. 花朵辉光
+------------------------------------------------------------------ */
+const haloMat = new THREE.SpriteMaterial({
+  map: glowTex, color: 0xff2f72,
+  transparent: true, opacity: 0,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false, depthTest: false
+});
+const halo = new THREE.Sprite(haloMat);
+halo.scale.set(16, 16, 1);
+halo.position.z = -3;
+halo.renderOrder = -15;
+
+const haloMat2 = new THREE.SpriteMaterial({
+  map: glowTex, color: 0xb14dff,
+  transparent: true, opacity: 0,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false, depthTest: false
+});
+const halo2 = new THREE.Sprite(haloMat2);
+halo2.scale.set(8, 8, 1);
+halo2.position.z = -1.5;
+halo2.renderOrder = -14;
+
+const haloMat3 = new THREE.SpriteMaterial({
+  map: glowTex, color: 0xffc46b,
+  transparent: true, opacity: 0,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false, depthTest: false
+});
+const halo3 = new THREE.Sprite(haloMat3);
+halo3.scale.set(3.4, 3.4, 1);
+halo3.position.z = 1.0;
+halo3.renderOrder = -13;
+
+const flashMat = new THREE.SpriteMaterial({
+  map: glowTex, color: 0xffe0c0,
+  transparent: true, opacity: 0,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false, depthTest: false
+});
+const flash = new THREE.Sprite(flashMat);
+flash.scale.set(5, 5, 1);
+flash.position.z = 0.5;
+flash.renderOrder = -12;
+
+/* ------------------------------------------------------------------
+   7. 组装
+------------------------------------------------------------------ */
+const flowerGroup = new THREE.Group();
+flowerGroup.add(bloomPoints);
+flowerGroup.add(halo);
+flowerGroup.add(halo2);
+flowerGroup.add(halo3);
+flowerGroup.add(flash);
+
+const rootGroup = new THREE.Group();
+rootGroup.add(ringSprite);
+rootGroup.add(flowerGroup);
+scene.add(rootGroup);
+
+/* ------------------------------------------------------------------
+   8. 花粉星尘
+------------------------------------------------------------------ */
+const DUST = isMobile ? 900 : 1800;
+const dustGeo = new THREE.BufferGeometry();
+{
+  const dp = new Float32Array(DUST * 3);
+  const dc = new Float32Array(DUST * 3);
+  for (let i = 0; i < DUST; i++) {
+    const r  = 2.4 + Math.random() * 5.8;
+    const th = Math.random() * Math.PI * 2;
+    const ph = Math.acos(2 * Math.random() - 1);
+    dp[i*3]     = r * Math.sin(ph) * Math.cos(th);
+    dp[i*3 + 1] = r * Math.sin(ph) * Math.sin(th);
+    dp[i*3 + 2] = r * Math.cos(ph) * 0.62;
+
+    const t = Math.random();
+    if (t < 0.55) {
+      dc[i*3] = 1.0; dc[i*3+1] = 0.78; dc[i*3+2] = 0.42;
+    } else if (t < 0.85) {
+      dc[i*3] = 1.0; dc[i*3+1] = 0.32; dc[i*3+2] = 0.56;
+    } else {
+      dc[i*3] = 0.82; dc[i*3+1] = 0.55; dc[i*3+2] = 1.0;
+    }
+  }
+  dustGeo.setAttribute('position', new THREE.BufferAttribute(dp, 3));
+  dustGeo.setAttribute('color',    new THREE.BufferAttribute(dc, 3));
+}
+const dustMat = new THREE.PointsMaterial({
+  size: 0.48, map: glowTex, vertexColors: true,
+  transparent: true, opacity: 0.48,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false, sizeAttenuation: true
+});
+const dustField = new THREE.Points(dustGeo, dustMat);
+dustField.renderOrder = 1;
+scene.add(dustField);
+
+/* ------------------------------------------------------------------
+   9. 太空背景
+------------------------------------------------------------------ */
+const bgGroup = new THREE.Group();
+scene.add(bgGroup);
+
+const NEBULA_COLORS = [
+  0x4a1a8a, 0x1a2a8a, 0x7a1a5a, 0x2a1a7a,
+  0x0a2a6a, 0x5a1a3a, 0x352080, 0x4a1858
+];
+for (let i = 0; i < 14; i++) {
+  const mat = new THREE.SpriteMaterial({
+    map: glowTex,
+    color: NEBULA_COLORS[i % NEBULA_COLORS.length],
+    transparent: true,
+    opacity: 0.026 + Math.random() * 0.042,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    depthTest: false
+  });
+  const s = new THREE.Sprite(mat);
+  const angle = Math.random() * Math.PI * 2;
+  const rad   = 16 + Math.random() * 48;
+  s.position.set(
+    Math.cos(angle) * rad,
+    Math.sin(angle) * rad * 0.62,
+    -28 - Math.random() * 28
+  );
+  s.scale.setScalar(32 + Math.random() * 48);
+  s.renderOrder = -110;
+  bgGroup.add(s);
+}
+
+function makeGalaxyTexture(w = 1024, h = 512) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+
+  for (let i = 0; i < 360; i++) {
+    const t = Math.random();
+    const px = t * w;
+    const spreadH = h * (0.10 + 0.16 * Math.sin(t * Math.PI * 2.5 + 0.4));
+    const py = h * 0.5 + (Math.random() - 0.5) * spreadH * 2;
+    const r  = 8 + Math.random() * 44;
+    const hue = 235 + Math.random() * 130;
+    const alpha = 0.016 + Math.random() * 0.042;
+    const g = ctx.createRadialGradient(px, py, 0, px, py, r);
+    g.addColorStop(0, `hsla(${hue}, 68%, 66%, ${alpha})`);
+    g.addColorStop(1, `hsla(${hue}, 68%, 66%, 0)`);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return new THREE.CanvasTexture(c);
+}
+
+const galaxyMat = new THREE.SpriteMaterial({
+  map: makeGalaxyTexture(),
+  transparent: true,
+  opacity: 0.9,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  depthTest: false
+});
+const galaxy = new THREE.Sprite(galaxyMat);
+galaxy.scale.set(115, 42, 1);
+galaxy.position.set(0, 8, -55);
+galaxy.rotation.z = -0.55;
+galaxy.renderOrder = -105;
+bgGroup.add(galaxy);
+
+function buildStarLayer(count, rMin, rMax, sizeBase, zSquash, palette, baseOpacity) {
+  const pos = new Float32Array(count * 3);
+  const col = new Float32Array(count * 3);
+
+  for (let i = 0; i < count; i++) {
+    const r = rMin + Math.random() * (rMax - rMin);
+    const th = Math.random() * Math.PI * 2;
+    const ph = Math.acos(2 * Math.random() - 1);
+    pos[i*3]     = r * Math.sin(ph) * Math.cos(th);
+    pos[i*3 + 1] = r * Math.sin(ph) * Math.sin(th);
+    pos[i*3 + 2] = r * Math.cos(ph) * zSquash - 30;
+
+    const c = palette[Math.floor(Math.random() * palette.length)];
+    const bright = 0.7 + Math.random() * 0.55;
+    col[i*3]     = c[0] * bright;
+    col[i*3 + 1] = c[1] * bright;
+    col[i*3 + 2] = c[2] * bright;
+  }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color',    new THREE.BufferAttribute(col, 3));
+
+  const m = new THREE.PointsMaterial({
+    size: sizeBase,
+    map: glowTex,
+    vertexColors: true,
+    transparent: true,
+    opacity: baseOpacity,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    sizeAttenuation: true
+  });
+
+  const p = new THREE.Points(g, m);
+  p.renderOrder = -100;
+  return p;
+}
+
+const starsFar = buildStarLayer(2600, 42, 95, 0.34, 0.5, [
+  [0.55, 0.62, 0.88],
+  [0.60, 0.52, 0.88],
+  [0.70, 0.68, 0.98],
+  [0.48, 0.58, 0.90]
+], 0.30);
+
+const starsMid = buildStarLayer(950, 24, 58, 0.46, 0.55, [
+  [0.88, 0.55, 0.78],
+  [0.78, 0.52, 0.92],
+  [0.98, 0.82, 0.60],
+  [0.92, 0.68, 0.88]
+], 0.46);
+
+const starsNear = buildStarLayer(190, 16, 32, 0.70, 0.6, [
+  [1.0, 0.88, 0.66],
+  [1.0, 0.70, 0.84],
+  [0.88, 0.78, 1.0],
+  [1.0, 0.96, 0.82]
+], 0.68);
+
+bgGroup.add(starsFar);
+bgGroup.add(starsMid);
+bgGroup.add(starsNear);
+
+/* ------------------------------------------------------------------
+   10. 状态
+------------------------------------------------------------------ */
+let time        = 0;
+let lastTime    = performance.now();
+let bloom       = 0.70;       // 初始半开，一眼能看到花
+let bloomTarget = 0.70;
+let prevBloom   = 0.70;
+let flare       = 0;
+let burst       = 0;
+let colorMix    = 0;
+let colorMixTarget = 0;
+let fpsSmooth   = 60;
+
+let rotCur      = 0;
+let rotTarget   = 0;
+let posXCur     = 0, posYCur = 0;
+let posXTarget  = 0, posYTarget = 0;
+let ringRotCur  = 0;
+
+const CIRC = 2 * Math.PI * 52;
+
+const ringFill  = document.getElementById('ringFill');
+const ringValue = document.getElementById('ringValue');
+const sTrack    = document.getElementById('sTrack');
+const sGesture  = document.getElementById('sGesture');
+const sOpen     = document.getElementById('sOpen');
+const sBloom    = document.getElementById('sBloom');
+const sFps      = document.getElementById('sFps');
+
+ringFill.style.strokeDashoffset = CIRC * (1 - bloom);
+
+/* 波形 */
+const waveCanvas = document.getElementById('wave');
+const wctx = waveCanvas.getContext('2d');
+const WAVE_LEN = 140;
+const waveData = new Array(WAVE_LEN).fill(0.7);
+
+function drawWave(value) {
+  const Wc = waveCanvas.width, Hc = waveCanvas.height;
+  waveData.push(value);
+  waveData.shift();
+
+  wctx.clearRect(0, 0, Wc, Hc);
+
+  wctx.strokeStyle = 'rgba(255,255,255,0.045)';
+  wctx.lineWidth = 1;
+  for (let i = 1; i < 4; i++) {
+    const y = (Hc / 4) * i;
+    wctx.beginPath(); wctx.moveTo(0, y); wctx.lineTo(Wc, y); wctx.stroke();
+  }
+
+  const step = Wc / (WAVE_LEN - 1);
+  const path = new Path2D();
+  for (let i = 0; i < WAVE_LEN; i++) {
+    const x = i * step;
+    const y = Hc - 6 - waveData[i] * (Hc - 16);
+    if (i === 0) path.moveTo(x, y);
+    else path.lineTo(x, y);
+  }
+
+  const fillPath = new Path2D(path);
+  fillPath.lineTo(Wc, Hc);
+  fillPath.lineTo(0, Hc);
+  fillPath.closePath();
+  const grad = wctx.createLinearGradient(0, 0, 0, Hc);
+  grad.addColorStop(0, 'rgba(255,77,141,0.30)');
+  grad.addColorStop(1, 'rgba(168,85,247,0.0)');
+  wctx.fillStyle = grad;
+  wctx.fill(fillPath);
+
+  const lineGrad = wctx.createLinearGradient(0, 0, Wc, 0);
+  lineGrad.addColorStop(0, 'rgba(168,85,247,0.25)');
+  lineGrad.addColorStop(0.65, 'rgba(255,77,141,0.85)');
+  lineGrad.addColorStop(1, 'rgba(255,196,107,0.95)');
+  wctx.strokeStyle = lineGrad;
+  wctx.lineWidth = 1.6;
+  wctx.shadowColor = 'rgba(255,77,141,0.7)';
+  wctx.shadowBlur = 8;
+  wctx.stroke(path);
+  wctx.shadowBlur = 0;
+
+  const hx = Wc - 1;
+  const hy = Hc - 6 - waveData[WAVE_LEN - 1] * (Hc - 16);
+  wctx.beginPath();
+  wctx.arc(hx - 1, hy, 2.4, 0, Math.PI * 2);
+  wctx.fillStyle = 'rgba(255,230,200,0.95)';
+  wctx.shadowColor = 'rgba(255,180,120,0.9)';
+  wctx.shadowBlur = 12;
+  wctx.fill();
+  wctx.shadowBlur = 0;
+}
+
+let lastUI = 0;
+let waveTick = 0;
+function updateUI(now) {
+  const pct = bloom * 100;
+  ringValue.textContent = pct.toFixed(0);
+  ringFill.style.strokeDashoffset = CIRC * (1 - bloom);
+
+  waveTick++;
+  if (waveTick % 2 === 0) drawWave(bloom * (0.82 + Math.random() * 0.28));
+
+  if (now - lastUI > 90) {
+    lastUI = now;
+    sBloom.textContent   = pct.toFixed(1) + '%';
+    sOpen.textContent    = (handOpenness * 100).toFixed(1) + '%';
+    sFps.textContent     = fpsSmooth.toFixed(0);
+    sGesture.textContent = currentGesture;
+    sGesture.className   = currentGesture === '—' ? '' : 'gold';
+  }
+}
+
+function lerpAngle(a, b, t) {
+  let d = b - a;
+  while (d >  Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return a + d * t;
+}
+
+/* ------------------------------------------------------------------
+   11. 主循环
+------------------------------------------------------------------ */
+let perfTimer = 0;
+let quality = 1.0;
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const now = performance.now();
+  let dt = (now - lastTime) / 1000;
+  if (dt > 0.1) dt = 0.1;
+  lastTime = now;
+  time += dt;
+  fpsSmooth += ((1 / Math.max(dt, 0.0001)) - fpsSmooth) * 0.05;
+
+  /* 自适应降级 */
+  if (now - perfTimer > 2500) {
+    perfTimer = now;
+    if (fpsSmooth < 42 && quality > 0.65) {
+      quality = Math.max(0.65, quality - 0.15);
+      curPR = MAX_PR * quality;
+      renderer.setPixelRatio(curPR);
+      material.uniforms.uPixelRatio.value = curPR;
+    }
+  }
+
+  const sinceHand = now - lastHandTime;
+  const handActive = handDetected && sinceHand < 400;
+
+  if (autoDemo) {
+    bloomTarget = 0.5 + 0.5 * Math.sin(time * 0.62 - Math.PI / 2);
+  } else if (handActive) {
+    bloomTarget = mapOpenness(handOpenness);
+    manualTarget = null;
+  } else if (manualTarget !== null) {
+    bloomTarget = manualTarget;
+  }
+
+  const kBloom = 1 - Math.pow(0.0012, dt);
+  bloom += (bloomTarget - bloom) * kBloom;
+  if (bloom < 0.0004) bloom = 0;
+  if (bloom > 0.9996) bloom = 1;
+
+  const vel = Math.abs(bloom - prevBloom) / Math.max(dt, 0.0001);
+  const flareBase = (handCount >= 2 && handActive) ? 0.14 : 0;
+  flare += (Math.min(1.1, vel * 0.55) + flareBase - flare) * Math.min(1, dt * 9);
+  prevBloom = bloom;
+
+  if (burst > 0) burst = Math.max(0, burst - dt * 2.8);
+
+  colorMix += (colorMixTarget - colorMix) * Math.min(1, dt * 4);
+
+  if (handActive) {
+    rotTarget  = handRoll * 0.85;
+    posXTarget = clamp(handCX * 1.0, -1.0, 1.0);
+    posYTarget = clamp(-handCY * 0.85, -0.9, 0.9);
+  } else {
+    rotTarget  *= Math.pow(0.25, dt);
+    posXTarget *= Math.pow(0.10, dt);
+    posYTarget *= Math.pow(0.10, dt);
+  }
+
+  const kRot = 1 - Math.pow(0.004, dt);
+  rotCur = lerpAngle(rotCur, rotTarget, kRot);
+  posXCur += (posXTarget - posXCur) * kRot;
+  posYCur += (posYTarget - posYCur) * kRot;
+
+  flowerGroup.position.set(posXCur, posYCur, 0);
+
+  /* 环缓慢自转（通过 material.rotation 让光在环上流动） */
+  ringRotCur += dt * 0.035;
+  ringMat.rotation = ringRotCur;
+  ringMat.opacity = 0.55 + bloom * 0.28;
+
+  /* uniforms */
+  const ang = rotCur + time * 0.035;
+  material.uniforms.uTime.value     = time;
+  material.uniforms.uBloom.value    = bloom;
+  material.uniforms.uFlare.value    = flare;
+  material.uniforms.uBurst.value    = burst;
+  material.uniforms.uColorMix.value = colorMix;
+  material.uniforms.uRotCos.value   = Math.cos(ang);
+  material.uniforms.uRotSin.value   = Math.sin(ang);
+
+  /* 辉光 */
+  const pulse = 0.85 + 0.15 * Math.sin(time * 1.7);
+  haloMat.opacity  = bloom * 0.22 * pulse;
+  haloMat2.opacity = bloom * 0.14 * pulse;
+  haloMat3.opacity = bloom * 0.22 * (0.9 + 0.1 * Math.sin(time * 3.1));
+  halo.scale.setScalar(15 + bloom * 3.0);
+  halo2.scale.setScalar(8.0 + bloom * 2.0);
+  halo3.scale.setScalar(3.0 + bloom * 1.4);
+
+  flashMat.opacity = burst * 0.9;
+  flash.scale.setScalar(4.0 + burst * 6.0);
+
+  dustField.rotation.z += dt * 0.012;
+  dustField.rotation.x = Math.sin(time * 0.10) * 0.16;
+  dustMat.opacity = 0.24 + bloom * 0.34;
+
+  bgGroup.rotation.z = time * 0.0035;
+  starsFar.rotation.z  += dt * 0.0022;
+  starsMid.rotation.z  += dt * 0.0040;
+  starsNear.rotation.z += dt * 0.0060;
+
+  renderer.render(scene, camera);
+  updateUI(now);
+}
+
+/* ------------------------------------------------------------------
+   12. 手势追踪
+------------------------------------------------------------------ */
+const videoEl        = document.getElementById('cam');
+const overlayCanvas  = document.getElementById('camOverlay');
+const octx           = overlayCanvas.getContext('2d');
+const camPlaceholder = document.getElementById('camPlaceholder');
+
+let hands = null;
+let camStarted = false;
+let handDetected = false;
+let handOpenness = 0;
+let handRoll = 0;
+let handCX = 0;
+let handCY = 0;
+let handCount = 0;
+let lastHandTime = -9999;
+let manualTarget = null;
+let autoDemo = false;
+let sending = false;
+
+let currentGesture = '—';
+let wasPinching = false;
+let wasPeace = false;
+
+const HAND_CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],
+  [13,17],[17,18],[18,19],[19,20],
+  [0,17]
+];
+const TIPS = [4, 8, 12, 16, 20];
+
+function dist3(a, b) {
+  const dx = a.x - b.x, dy = a.y - b.y, dz = (a.z || 0) - (b.z || 0);
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+function sub3(a, b) {
+  return { x: a.x - b.x, y: a.y - b.y, z: (a.z || 0) - (b.z || 0) };
+}
+function angleBetween(v1, v2) {
+  const d = v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+  const m1 = Math.sqrt(v1.x * v1.x + v1.y * v1.y + v1.z * v1.z) || 1e-6;
+  const m2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y + v2.z * v2.z) || 1e-6;
+  let c = d / (m1 * m2);
+  c = Math.max(-1, Math.min(1, c));
+  return Math.acos(c);
+}
+const clamp01 = v => Math.max(0, Math.min(1, v));
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function analyzeHand(lm) {
+  const palmSize = dist3(lm[0], lm[9]) || 1e-6;
+
+  const sets = [
+    [5, 6, 7, 8],
+    [9, 10, 11, 12],
+    [13, 14, 15, 16],
+    [17, 18, 19, 20]
+  ];
+
+  const fingerAngles = [];
+  let sum = 0;
+  for (const [mcp, pip, dip, tip] of sets) {
+    const v1 = sub3(lm[pip], lm[mcp]);
+    const v2 = sub3(lm[tip], lm[pip]);
+    const ang = angleBetween(v1, v2);
+    fingerAngles.push(ang);
+    sum += 1 - Math.min(1, ang / (Math.PI * 0.60));
+  }
+  const fingerScore = sum / 4;
+
+  const thumbRatio = dist3(lm[4], lm[5]) / palmSize;
+  const thumbScore = clamp01((thumbRatio - 0.42) / 0.58);
+
+  const openness = clamp01(fingerScore * 0.84 + thumbScore * 0.16);
+
+  const fingers = [
+    thumbRatio > 0.55,
+    fingerAngles[0] < 0.55,
+    fingerAngles[1] < 0.55,
+    fingerAngles[2] < 0.55,
+    fingerAngles[3] < 0.55
+  ];
+
+  const pinchDist = dist3(lm[4], lm[8]) / palmSize;
+
+  const dx = lm[9].x - lm[0].x;
+  const dy = lm[9].y - lm[0].y;
+  const roll = Math.atan2(-dx, -dy);
+
+  const cx = (lm[0].x + lm[9].x) * 0.5;
+  const cy = (lm[0].y + lm[9].y) * 0.5;
+
+  return { openness, roll, cx, cy, fingers, pinchDist };
+}
+
+function drawHand(lm, alpha = 1) {
+  const Wc = overlayCanvas.width;
+  const Hc = overlayCanvas.height;
+
+  octx.lineCap = 'round';
+  octx.lineJoin = 'round';
+  octx.lineWidth = 2.2;
+  octx.strokeStyle = `rgba(255,138,61,${0.92 * alpha})`;
+  octx.shadowColor = 'rgba(255,138,61,0.95)';
+  octx.shadowBlur = 7;
+
+  for (const [a, b] of HAND_CONNECTIONS) {
+    octx.beginPath();
+    octx.moveTo((1 - lm[a].x) * Wc, lm[a].y * Hc);
+    octx.lineTo((1 - lm[b].x) * Wc, lm[b].y * Hc);
+    octx.stroke();
+  }
+
+  octx.shadowBlur = 0;
+  octx.fillStyle = 'rgba(255,224,190,0.95)';
+  for (let i = 0; i < lm.length; i++) {
+    if (TIPS.includes(i)) continue;
+    octx.beginPath();
+    octx.arc((1 - lm[i].x) * Wc, lm[i].y * Hc, 2.3, 0, Math.PI * 2);
+    octx.fill();
+  }
+
+  octx.shadowColor = 'rgba(255,196,107,1)';
+  octx.shadowBlur = 12;
+  octx.fillStyle = 'rgba(255,240,215,1)';
+  for (const t of TIPS) {
+    octx.beginPath();
+    octx.arc((1 - lm[t].x) * Wc, lm[t].y * Hc, 3.4, 0, Math.PI * 2);
+    octx.fill();
+  }
+  octx.shadowBlur = 0;
+}
+
+function onHandsResults(results) {
+  const list = results.multiHandLandmarks || [];
+  handCount = list.length;
+
+  octx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+  if (list.length > 0) {
+    handDetected = true;
+    lastHandTime = performance.now();
+
+    const lm = list[0];
+    const info = analyzeHand(lm);
+
+    handOpenness += (info.openness - handOpenness) * 0.35;
+    handRoll = info.roll;
+    handCX = (0.5 - info.cx) * 2.0;
+    handCY = (info.cy - 0.5) * 2.0;
+
+    const isPinch = info.pinchDist < 0.36;
+    const isPeace = info.fingers[1] && info.fingers[2] && !info.fingers[3] && !info.fingers[4];
+
+    if (isPinch && !wasPinching) burst = 1.0;
+    wasPinching = isPinch;
+
+    if (isPeace && !wasPeace) {
+      colorMixTarget = colorMixTarget > 0.5 ? 0 : 1;
+    }
+    wasPeace = isPeace;
+
+    if (isPinch) {
+      currentGesture = '捏合 · 冲击波';
+    } else if (isPeace) {
+      currentGesture = colorMixTarget > 0.5 ? '剪刀手 · 冷调' : '剪刀手 · 暖调';
+    } else if (info.fingers[1] && !info.fingers[2] && !info.fingers[3] && !info.fingers[4]) {
+      currentGesture = '单指 · 旋转加速';
+      rotTarget += 0.10;
+    } else if (info.fingers.filter(f => f).length >= 4) {
+      currentGesture = '张开手掌';
+    } else if (info.fingers.filter(f => f).length <= 1) {
+      currentGesture = '握拳';
+    } else {
+      currentGesture = '中间手势';
+    }
+
+    list.forEach((h, i) => drawHand(h, i === 0 ? 1 : 0.55));
+
+    sTrack.textContent = handCount >= 2 ? `已捕捉 ×${handCount}` : '已捕捉';
+    sTrack.className = 'ok';
+  } else {
+    handDetected = false;
+    currentGesture = '—';
+    sTrack.textContent = '未检测到手';
+    sTrack.className = 'warn';
+  }
+}
+
+function mapOpenness(v) {
+  const lo = 0.24, hi = 0.80;
+  return clamp01((v - lo) / (hi - lo));
+}
+
+async function startCamera() {
+  if (camStarted) return;
+
+  if (typeof window.Hands === 'undefined' || typeof window.Camera === 'undefined') {
+    sTrack.textContent = '组件未加载';
+    sTrack.className = 'warn';
+    camPlaceholder.textContent = 'MediaPipe 加载失败';
+    return;
+  }
+
+  sTrack.textContent = '启动中…';
+  sTrack.className = 'warn';
+  camPlaceholder.textContent = '正在启动…';
+
+  try {
+    hands = new window.Hands({
+      locateFile: (file) =>
+        `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+    hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 0,
+      minDetectionConfidence: 0.55,
+      minTrackingConfidence: 0.55
+    });
+    hands.onResults(onHandsResults);
+
+    const cam = new window.Camera(videoEl, {
+      onFrame: async () => {
+        if (sending) return;
+        sending = true;
+        try { await hands.send({ image: videoEl }); } catch (e) { /* ignore */ }
+        sending = false;
+      },
+      width: 640,
+      height: 480
+    });
+
+    await cam.start();
+
+    camStarted = true;
+    autoDemo = false;
+    camPlaceholder.style.display = 'none';
+    sTrack.textContent = '运行中';
+    sTrack.className = 'ok';
+    document.getElementById('btnCam').textContent = '摄像头已开启';
+  } catch (err) {
+    console.warn('Camera start failed:', err);
+    sTrack.textContent = '摄像头不可用';
+    sTrack.className = 'warn';
+    camPlaceholder.textContent = '摄像头不可用';
+  }
+}
+
+/* ------------------------------------------------------------------
+   13. 交互
+------------------------------------------------------------------ */
+document.getElementById('btnOpen').addEventListener('click', () => {
+  autoDemo = false;
+  manualTarget = 1;
+  if (!handDetected) { sTrack.textContent = '手动模式'; sTrack.className = 'warn'; }
+});
+
+document.getElementById('btnClose').addEventListener('click', () => {
+  autoDemo = false;
+  manualTarget = 0;
+  if (!handDetected) { sTrack.textContent = '手动模式'; sTrack.className = 'warn'; }
+});
+
+document.getElementById('btnCam').addEventListener('click', startCamera);
+
+document.getElementById('btnAuto').addEventListener('click', (e) => {
+  autoDemo = !autoDemo;
+  manualTarget = null;
+  e.currentTarget.style.borderColor = autoDemo ? 'rgba(255,77,141,.6)' : '';
+  e.currentTarget.style.color = autoDemo ? '#fff' : '';
+  sTrack.textContent = autoDemo ? '自动演示' : '待机';
+  sTrack.className = autoDemo ? 'ok' : 'warn';
+});
+
+/* ------------------------------------------------------------------
+   14. 自适应 & 启动
+------------------------------------------------------------------ */
+window.addEventListener('resize', () => {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  renderer.setSize(w, h);
+  fitCamera();
+});
+
+requestAnimationFrame(animate);
+</script>
+
+</body>
+</html>
